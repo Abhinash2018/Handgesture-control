@@ -10,9 +10,6 @@ if use_solutions:
     mp_hands = mp.solutions.hands
     mp_drawing = mp.solutions.drawing_utils
     hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.8)
-    # Face mesh (solutions API)
-    mp_face_mesh = mp.solutions.face_mesh
-    face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, min_detection_confidence=0.6)
 else:
     # mediapipe Tasks API is installed (no mp.solutions). To use the
     # hand-landmarker task you must provide a model file (Hand Landmarker
@@ -35,18 +32,7 @@ else:
     options = HandLandmarkerOptions(base_options=BaseOptions(model_asset_path=model_path), num_hands=2)
     task_landmarker = HandLandmarker.create_from_options(options)
     # Note: later in the loop we'll use `task_landmarker.detect` to get landmarks
-    # Optionally create a face landmarker if a task model is provided
-    face_model_path = os.environ.get("FACE_LANDMARKER_MODEL", "face_landmarker.task")
-    face_task_landmarker = None
-    if os.path.exists(face_model_path):
-        from mediapipe.tasks.python.vision import face_landmarker as fl
-        FaceLandmarker = fl.FaceLandmarker
-        FaceLandmarkerOptions = fl.FaceLandmarkerOptions
-        face_options = FaceLandmarkerOptions(base_options=BaseOptions(model_asset_path=face_model_path), num_faces=1)
-        try:
-            face_task_landmarker = FaceLandmarker.create_from_options(face_options)
-        except Exception:
-            face_task_landmarker = None
+
 
 
 def is_finger_up(hand_landmarks, finger_tip_idx, finger_pip_idx):
@@ -170,41 +156,6 @@ def draw_gun(frame, hand_landmarks, handedness):
     cv.putText(frame, "POINT", (x + 10, y - 10), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
 
-def is_mouth_o_shape(face_landmarks_list):
-    """
-    Detect if one eye is closed.
-    face_landmarks_list: list of NormalizedLandmark or similar with x, y attributes
-    Returns True if either left or right eye is closed
-    """
-    if not face_landmarks_list or len(face_landmarks_list) < 386:
-        return False
-    
-    try:
-        # Eye landmark indices (MediaPipe FaceMesh):
-        # Left eye: top=159, bottom=145
-        # Right eye: top=386, bottom=374
-        
-        left_eye_top = face_landmarks_list[159]
-        left_eye_bottom = face_landmarks_list[145]
-        right_eye_top = face_landmarks_list[386]
-        right_eye_bottom = face_landmarks_list[374]
-        
-        # Calculate vertical eye openness (distance between top and bottom)
-        left_eye_openness = abs(left_eye_bottom.y - left_eye_top.y)
-        right_eye_openness = abs(right_eye_bottom.y - right_eye_top.y)
-        
-        # Threshold for eye closure
-        eye_closure_threshold = 0.015  # if openness < this, eye is considered closed
-        
-        left_eye_closed = left_eye_openness < eye_closure_threshold
-        right_eye_closed = right_eye_openness < eye_closure_threshold
-        
-        # Return True if one (and only one) eye is closed
-        return (left_eye_closed and not right_eye_closed) or (right_eye_closed and not left_eye_closed)
-    except (IndexError, AttributeError):
-        return False
-
-
 def get_hand_index_tip_pos(hand_landmarks, frame_shape):
     """Get index finger tip position from hand landmarks, scaled to frame"""
     if not hand_landmarks or not hasattr(hand_landmarks, 'landmark'):
@@ -316,20 +267,7 @@ while True:
                 else:
                     # Reset scroll tracking when not pinching
                     prev_index_y = None
-        # Face tracking (solutions API)
-        try:
-            face_results = face_mesh.process(rgb)
-            if face_results.multi_face_landmarks:
-                for f_landmarks in face_results.multi_face_landmarks:
-                    # Draw face landmark dots
-                    H, W = frame.shape[:2]
-                    pts = np.array([[int(p.x * W), int(p.y * H)] for p in f_landmarks.landmark], dtype=np.int32)
-                    if pts.size:
-                        # draw small landmark dots (like hand tracker)
-                        for p in pts:
-                            cv.circle(frame, (int(p[0]), int(p[1])), 2, (255, 200, 0), -1)
-        except Exception:
-            pass
+
     else:
         # Tasks API path (use file-backed Image for compatibility)
         from mediapipe.tasks.python.vision.core import image as mp_image
@@ -419,41 +357,7 @@ while True:
                     # Reset scroll tracking when not pinching
                     prev_index_y = None
 
-        # Face tracking (Tasks API) if face task landmarker exists
-        mouth_is_o = False
-        if 'face_task_landmarker' in globals() and face_task_landmarker is not None:
-            try:
-                mp_img = mp_image.Image.create_from_file(tmp_name)
-                face_result = face_task_landmarker.detect(mp_img)
-                if face_result and face_result.face_landmarks:
-                    for flm in face_result.face_landmarks:
-                        # Check if mouth is "O" shaped
-                        mouth_is_o = is_mouth_o_shape(flm)
-                        
-                        H, W = frame.shape[:2]
-                        pts = np.array([[int(p.x * W), int(p.y * H)] for p in flm], dtype=np.int32)
-                        if pts.size:
-                            # draw small landmark dots (like hand tracker)
-                            for p in pts:
-                                cv.circle(frame, (int(p[0]), int(p[1])), 2, (255, 200, 0), -1)
-            except Exception:
-                pass
-        
-        # Face tracking (Tasks API) if face task landmarker exists
-        if 'face_task_landmarker' in globals() and face_task_landmarker is not None:
-            try:
-                mp_img = mp_image.Image.create_from_file(tmp_name)
-                face_result = face_task_landmarker.detect(mp_img)
-                if face_result and face_result.face_landmarks:
-                    for flm in face_result.face_landmarks:
-                        H, W = frame.shape[:2]
-                        pts = np.array([[int(p.x * W), int(p.y * H)] for p in flm], dtype=np.int32)
-                        if pts.size:
-                            # draw small landmark dots (like hand tracker)
-                            for p in pts:
-                                cv.circle(frame, (int(p[0]), int(p[1])), 2, (255, 200, 0), -1)
-            except Exception:
-                pass
+
         
         # Show mouse mode indicator
         cv.putText(frame, "MOUSE: Active", (10, 70), cv.FONT_HERSHEY_SIMPLEX, 0.7, (100, 200, 255), 2)
